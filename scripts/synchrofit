@@ -37,7 +37,9 @@ if __name__ == "__main__":
     
     group2 = parser.add_argument_group('Fitting Options')
     group2.add_argument("--fit_type", dest='fit_type', type=str, default=None, 
-                        help='(No default) Model to fit: JP, KP, CI')
+                        help='(No default) Model to fit: JP, KP, CI, SSAJP, SSAKP, SSACI, etc.')
+    group2.add_argument("--n_peaks", dest='n_peaks', type=int, default=31, 
+                        help='(Default = 31) Number of increments with which to sample the peak frequency range')
     group2.add_argument("--n_breaks", dest='n_breaks', type=int, default=31, 
                         help='(Default = 31) Number of increments with which to sample the break frequency range')
     group2.add_argument("--n_injects", dest='n_injects', type=int, default=31, 
@@ -46,6 +48,8 @@ if __name__ == "__main__":
                         help='(Default = 31) Number of increments with which to sample the remnant ratio range')
     group2.add_argument("--n_iterations", dest='n_iterations', type=int, default=3, 
                         help='(Default = 3) Number of iterations.')
+    group2.add_argument("--peak_range", dest='peak_range', type=float, nargs='+', default=[6, 10], 
+                        help='(Default = [6, 10]) Accepted range for the log(peak frequency) in Hz')
     group2.add_argument("--break_range", dest='break_range', type=float, nargs='+', default=[8, 11], 
                         help='(Default = [8, 11]) Accepted range for the log(break frequency) in Hz')
     group2.add_argument("--inject_range", dest='inject_range', type=float, nargs='+', default=[2.01, 2.99], 
@@ -103,10 +107,10 @@ if __name__ == "__main__":
     espace='            '
     colorstring = color_text("Estimating free parameters.", Colors.Orange)
     print("INFO __main__ {}".format(colorstring))
-    params = spectral_fitter(frequency, luminosity, dluminosity, options.fit_type, options.n_breaks, \
-            options.break_range, options.n_injects, options.inject_range, options.n_remnants, options.remnant_range, \
+    params = spectral_fitter(frequency, luminosity, dluminosity, options.fit_type, 
+            options.n_peaks, options.peak_range,
+            options.n_breaks, options.break_range, options.n_injects, options.inject_range, options.n_remnants, options.remnant_range, \
             options.n_iterations, options.search_space, options.b_field, options.redshift, options.write_model, options.work_dir, options.save_prefix)
-
     colorstring = color_text("Evaluating model over the observed frequencies", Colors.Orange)
     print("INFO __main__ {}".format(colorstring))
     model_data, err_model_data, model_data_min, model_data_max = spectral_model(params[:-1], frequency, options.mc_length, options.err_width, \
@@ -128,5 +132,5 @@ if __name__ == "__main__":
     if options.age:
         colorstring = color_text("Estimating spectral ages", Colors.Orange)
         print("INFO __main__ {}".format(colorstring))
-        params = (params[0], 10**params[1], params[5])
+        params = (params[0], 10**params[3], params[7]) # updated indices for fit_type, break, remnant
         spectral_ages(params, options.b_field, options.redshift)
