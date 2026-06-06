@@ -30,7 +30,7 @@ def color_text(s, c, base=30):
     return template.format(t, s)
 
 class Const:
-    # define constants (SI units)
+    # ine constants (SI units)
     c   = 2.99792458e+8  # light speed
     me  = 9.10938356e-31 # electron mass
     mu0 = 4*np.pi*1e-7   # magnetic permeability osf free space
@@ -41,6 +41,8 @@ class CheckFunctionInputs:
         luminosity,
         dluminosity,
         fit_type,
+        n_peaks,
+        peak_range,
         n_breaks,
         break_range,
         n_injects,
@@ -63,13 +65,15 @@ class CheckFunctionInputs:
         if not isinstance(fit_type, str):
             raise Exception(color_text('Expected string type for "fit_type".',Colors.Red))
         else:
-            if fit_type not in ['KP', 'TKP', 'JP', 'TJP', 'CI', 'TCI']:
-                raise Exception(color_text('fit_type needs to be a string and one of: "KP", "TKP", "JP", "TJP", "CI", "TCI"',Colors.Red))
-
+            if fit_type not in ['KP', 'TKP', 'JP', 'TJP', 'CI', 'TCI', 'SSAKP', 'TSSAKP', 'SSAJP', 'TSSAJP', 'SSACI', 'TSSACI']:
+                raise Exception(color_text('fit_type needs to be a string and one of standard, tribble, or SSA models',Colors.Red))
         # simplify sampling the parameter grid if fitting KP or JP models
-        if fit_type in ['KP', 'TKP', 'JP', 'TJP']:
+        if fit_type in ['KP', 'TKP', 'JP', 'TJP', 'SSAKP', 'TSSAKP', 'SSAJP', 'TSSAJP']:
             n_remnants = 1
             remnant_range = [0, 0]
+        if 'SSA' not in fit_type:
+            n_peaks = 1
+            peak_range = [0, 0]
 
         # ensure sensible values for n_injects
         if not isinstance(n_injects, int):
@@ -183,12 +187,12 @@ class CheckFunctionInputs:
         frequency = np.asarray(frequency)
         luminosity = np.asarray(luminosity)
         dluminosity = np.asarray(dluminosity)
+        peak_range = np.asarray(peak_range)
         inject_range = np.asarray(inject_range)
         break_range = np.asarray(break_range)
         remnant_range = np.asarray(remnant_range)
-
         # if remnant_range is zero, assume CI-on model (e.g. no need to sample remnant_range parameter space)
-        if fit_type == 'CI' and all([x == 0 for x in remnant_range]):
+        if 'CI' in fit_type and all([x == 0 for x in remnant_range]):
             logger.info(color_text('Recieved zero for remnant range, assuming CI-on model.', Colors.DodgerBlue))
             n_remnants = 1
         
@@ -197,7 +201,7 @@ class CheckFunctionInputs:
             raise Exception(color_text('n_iterations needs to be an integer and greater than 0',Colors.Red))
 
         # ensure sensible inputs for Tribble models
-        if fit_type in ['TKP', 'TJP', 'TCI']:
+        if fit_type in ['TKP', 'TJP', 'TCI', 'TSSAKP', 'TSSAJP', 'TSSACI']:
             if redshift is None:
                 raise Exception(color_text('{} requires a redshift.'.format(fit_type),Colors.Red))
             else:
@@ -213,10 +217,9 @@ class CheckFunctionInputs:
         espace='                      '
         colorstring = color_text("Fitting options accepted:", Colors.DodgerBlue)
         logger.info(colorstring)
-        colorstring=color_text(" {} fit_type = {} \n {} inject_range = {} \n {} n_injects = {} \n {} n_breaks = {} \n {} break_range = {} \n {} n_remnants = {} \n {} remnant_range = {}".format(espace, fit_type,espace,inject_range, espace, n_injects, espace, n_breaks, espace, break_range, espace, n_remnants, espace, remnant_range), Colors.Green)
+        colorstring=color_text(" {} fit_type = {} \n {} peak_range = {} \n {} n_peaks = {} \n {} inject_range = {} \n {} n_injects = {} \n {} n_breaks = {} \n {} break_range = {} \n {} n_remnants = {} \n {} remnant_range = {}".format(espace, fit_type, espace, peak_range, espace, n_peaks, espace,inject_range, espace, n_injects, espace, n_breaks, espace, break_range, espace, n_remnants, espace, remnant_range), Colors.Green)
         print(colorstring)
-
-        return(frequency, luminosity, dluminosity, inject_range, break_range, remnant_range, n_injects, n_breaks, n_remnants)
+        return(frequency, luminosity, dluminosity, peak_range, inject_range, break_range, remnant_range, n_peaks, n_injects, n_breaks, n_remnants)
     
     def spectral_model(params, 
         frequency, 
@@ -224,21 +227,25 @@ class CheckFunctionInputs:
         err_width, 
         b_field,
         redshift):
-
-        # check params has eight elements
-        if len(params) != 8:
-            raise Exception(color_text("Expected 8 elements in params, received {}".format(len(params)), Colors.Red))
+        # check params has 10 elements
+        if len(params) != 10:
+            raise Exception(color_text("Expected 10 elements in params, received {}".format(len(params)), Colors.Red))
         
         # unpack params
-        fit_type, break_predict, dbreak_predict, inject_predict, dinject_predict, remnant_predict, dremnant_predict, normalisation = params
+        fit_type, peak_predict, dpeak_predict, break_predict, dbreak_predict, inject_predict, dinject_predict, remnant_predict, dremnant_predict, normalisation = params
         
         # check fit_type is correct
         if not isinstance(fit_type, str):
             raise Exception(color_text('Expected string type for "fit_type".',Colors.Red))
         else:
-            if fit_type not in ['KP', 'TKP', 'JP', 'TJP', 'CI', 'TCI']:
-                raise Exception(color_text('fit_type needs to be a string and one of: "KP", "TKP", "JP", "TJP", "CI", "TCI"',Colors.Red))
-
+            if fit_type not in ['KP', 'TKP', 'JP', 'TJP', 'CI', 'TCI', 'SSAKP', 'TSSAKP', 'SSAJP', 'TSSAJP', 'SSACI', 'TSSACI']:
+                raise Exception(color_text('fit_type needs to be a string and one of standard, tribble or SSA models',Colors.Red))
+        # check peak frequency (and uncertainty)
+        if not isinstance(peak_predict, float):
+            raise Exception(color_text('peak_predict needs to be a float',Colors.Red))
+        if not isinstance(dpeak_predict, (float, int)):
+            raise Exception(color_text('dpeak_predict needs to be a float or integer',Colors.Red))
+        
         # check break frequency (and uncertainty) has the correct type and sensible value
         if not isinstance(break_predict, float):
             raise Exception(color_text('break_predict needs to be a float',Colors.Red))
@@ -283,7 +290,7 @@ class CheckFunctionInputs:
                 raise Exception(color_text('normalisation cannot be negative',Colors.Red))
         
         # check magnetic field and redshift are supplied if Tribble models are selected
-        if fit_type in ['TKP', 'TJP', 'TCI']:
+        if fit_type in ['TKP', 'TJP', 'TCI', 'TSSAKP', 'TSSAJP', 'TSSACI']:
             if redshift is None or b_field is None:
                 raise Exception(color_text('{} requires a redshift and magnetic field strength.'.format(fit_type),Colors.Red))
 
@@ -300,8 +307,7 @@ class CheckFunctionInputs:
             else:
                 if redshift < 0:
                     raise Exception(color_text('redshift cannot be negative',Colors.Red))
-
-        return(fit_type, break_predict, dbreak_predict, inject_predict, dinject_predict, remnant_predict, dremnant_predict, normalisation)
+        return(fit_type, peak_predict, dpeak_predict, break_predict, dbreak_predict, inject_predict, dinject_predict, remnant_predict, dremnant_predict, normalisation)
             
     def spectral_plotter():
         pass
