@@ -31,6 +31,7 @@ def besselK53():
 def __spectral_models_standard(frequency, 
     luminosity, 
     fit_type, 
+    peak_frequency,
     break_frequency,
     injection_index, 
     remnant_ratio, 
@@ -63,11 +64,10 @@ def __spectral_models_standard(frequency,
     """ 
     # unpack besselK53 function
     bessel_x, bessel_F = besselK53
-
-    if fit_type == 'JP' or fit_type == 'KP':
+    if fit_type == 'JP' or fit_type == 'KP' or fit_type == 'SSAJP' or fit_type == 'SSAKP':
         remnant_ratio = 0
-
     nalpha, nenergiesJP, nenergiesCI = 32, 64, 64 # can be increased for extra precision
+        
     nenergies = nenergiesJP + nenergiesCI
     
     # calculate the best fit to frequency-luminosity data
@@ -89,12 +89,12 @@ def __spectral_models_standard(frequency,
                 dalpha = (alpha_max - alpha_min)/nalpha
                 
                 # integrate over energy (as x)
-                if (fit_type == 'CI' or fit_type == 'JP'):
+                if ('CI' in fit_type or 'JP' in fit_type):
                     x_crit = np.log10(frequency[freqPointer]/(break_frequency*np.sin(alpha)))
-                elif (fit_type == 'KP'):
+                elif ('KP' in fit_type):
                     x_crit = np.log10(frequency[freqPointer]*np.sin(alpha)**3/(break_frequency))
                 else:
-                    raise Exception('Spectral fit must be either \'CI\', \'JP\' or \'KP\' model.')
+                    raise Exception('Spectral fit must be a valid CI, JP or KP model.')
                 if remnant_ratio > 0:
                     x_crit_star = np.log10(frequency[freqPointer]/(break_frequency*np.sin(alpha))*remnant_ratio**2)
                 else:
@@ -113,15 +113,15 @@ def __spectral_models_standard(frequency,
                     
                     # calculate the spectrum for JP, KP or CI/off models
                     if (x > 10**x_crit):
-                        if (fit_type == 'CI'):
+                        if ('CI' in fit_type):
                             if remnant_ratio > 0:
                                 N_x = x**(-1./2)*((np.sqrt(x) - 10**(x_crit_star/2))**(injection_index - 1) - (np.sqrt(x) - 10**(x_crit/2))**(injection_index - 1))
                             else:
                                 N_x = x**((injection_index - 2)/2.)*(1 - x**((1 - injection_index)/2.)*(np.sqrt(x) - 10**(x_crit/2))**(injection_index - 1))
-                        elif (fit_type == 'JP' or fit_type == 'KP'):
+                        elif ('JP' in fit_type or 'KP' in fit_type):
                             N_x = x**(-1./2)*(np.sqrt(x) - 10**(x_crit/2))**(injection_index - 2)
                     elif (x > 10**x_crit_star): # only CI-off model should meet this condition
-                        if (fit_type == 'CI'):
+                        if ('CI' in fit_type):
                             if remnant_ratio > 0:
                                 N_x = x**(-1./2)*(np.sqrt(x) - 10**(x_crit_star/2))**(injection_index - 1)
                             else:
@@ -147,17 +147,25 @@ def __spectral_models_standard(frequency,
                                     bessla = besslc + 1
                                 else:
                                     besslb = besslc - 1
-                                besslc = (bessla + besslb)//2
-                            F_x = bessel_F[besslc]
-
-                    # add contribution to the model spectrum flux
-                    if (fit_type == 'CI'):
-                        luminosity_predict[freqPointer] = luminosity_predict[freqPointer] + frequency[freqPointer]**(-injection_index/2.)*np.sin(alpha)**((injection_index + 4)/2.)*F_x*N_x*dx*dalpha
-                    elif (fit_type == 'JP'):
-                        luminosity_predict[freqPointer] = luminosity_predict[freqPointer] + frequency[freqPointer]**((1 - injection_index)/2.)*np.sin(alpha)**((injection_index + 3)/2.)*F_x*N_x*dx*dalpha
-                    elif (fit_type == 'KP'):    
-                        luminosity_predict[freqPointer] = luminosity_predict[freqPointer] + frequency[freqPointer]**((1 - injection_index)/2.)*np.sin(alpha)**((3*injection_index + 1)/2.)*F_x*N_x*dx*dalpha
-
+                            besslc = (bessla + besslb)//2
+                        F_x = bessel_F[besslc]
+                # add contribution to the model spectrum flux
+                if ('CI' in fit_type):
+                    luminosity_predict[freqPointer] = luminosity_predict[freqPointer] + frequency[freqPointer]**(-injection_index/2.)*np.sin(alpha)**((injection_index + 4)/2.)*F_x*N_x*dx*dalpha
+                elif ('JP' in fit_type):
+                    luminosity_predict[freqPointer] = luminosity_predict[freqPointer] + frequency[freqPointer]**((1 - injection_index)/2.)*np.sin(alpha)**((injection_index + 3)/2.)*F_x*N_x*dx*dalpha
+                elif ('KP' in fit_type):    
+                    luminosity_predict[freqPointer] = luminosity_predict[freqPointer] + frequency[freqPointer]**((1 - injection_index)/2.)*np.sin(alpha)**((3*injection_index + 1)/2.)*F_x*N_x*dx*dalpha
+                    
+            # SSA Optical Depth & Attenuation 
+            if peak_frequency > 0:
+                tau = (frequency[freqPointer] / peak_frequency)**(-(injection_index + 4) / 2.0)
+                if tau < 1e-4:
+                    ssa_factor = 1.0 - tau/2.0
+                else:
+                    ssa_factor = (1.0 - np.exp(-tau)) / tau
+                luminosity_predict[freqPointer] = luminosity_predict[freqPointer] * ssa_factor
+    
             if (normalisation <= 0):
                 luminosity_sum = luminosity_sum + np.log10(luminosity[freqPointer] + 1e-307)
                 predict_sum = predict_sum + np.log10(luminosity_predict[freqPointer] + 1e-307)
@@ -179,6 +187,7 @@ def __spectral_models_tribble(frequency,
     fit_type, 
     b_field, 
     redshift, 
+    peak_frequency,
     break_frequency, 
     injection_index, 
     remnant_ratio, 
@@ -220,11 +229,9 @@ def __spectral_models_tribble(frequency,
     mu0 = 4*np.pi*1e-7        # magnetic permeability of free space
     e = 1.60217662e-19        # charge on electron
     sigmaT = 6.6524587158e-29 # electron cross-section
-
     # unpack besselK53 function
     bessel_x, bessel_F = besselK53
-
-    if fit_type == 'TJP' or fit_type == 'TKP':
+    if fit_type == 'TJP' or fit_type == 'TKP' or fit_type == 'TSSAJP' or fit_type == 'TSSAKP':
         remnant_ratio = 0
     nalpha, nfields, nenergiesJP, nenergiesCI = 32, 128, 128, 128 # can be increased for extra precision (128 for TJP)
     nenergies = nenergiesJP + nenergiesCI
@@ -262,13 +269,13 @@ def __spectral_models_tribble(frequency,
                     alpha = ((j + 0.5)/nalpha)*(alpha_max - alpha_min) + alpha_min
                     dalpha = (alpha_max - alpha_min)/nalpha
                     
-                    # integrate over energy (as E): TRIBBLE
-                    if (fit_type == 'TCI' or fit_type == 'TJP'):
+                     # integrate over energy (as E): TRIBBLE
+                    if ('CI' in fit_type or 'JP' in fit_type):
                         const_losses = 4*sigmaT*(B**2 + Bic**2)/(3*me**2*c**3)/(2*mu0)
-                    elif (fit_type == 'TKP'):
+                    elif ('KP' in fit_type):
                         const_losses = 4*sigmaT*((B*np.sin(alpha))**2 + Bic**2)/(3*me**2*c**3)/(2*mu0)
                     else:
-                        raise Exception('Spectral fit must be either \'TCI\', \'TJP\' or \'TKP\' model.')
+                        raise Exception('Spectral fit must be a valid TCI, TJP or TKP model.')
                     E_crit = np.log10(1./(const_losses*t_syn))
                     E_min = E_crit - 16 # can be increased for extra precision away from break
                     E_max = E_crit + 16
@@ -287,12 +294,12 @@ def __spectral_models_tribble(frequency,
                         x = 4*np.pi*me**3*(c**4)*frequency[freqPointer]/(3*e*E**2*B*np.sin(alpha))
                         dx = (8*np.pi*me**3*c**4*frequency[freqPointer]/(3*e*E**3*B*np.sin(alpha))*dE)*( 4*np.pi*me**3*c**4*frequency[freqPointer]/(3*e*E**2*B**2*np.sin(alpha))*dB)
                         
-                        if (fit_type == 'TCI' or fit_type == 'TJP'):
+                        if ('CI' in fit_type or 'JP' in fit_type):
                             x_crit = np.log10(frequency[freqPointer]/(break_frequency*np.sin(alpha)))
-                        elif (fit_type == 'TKP'):
+                        elif ('KP' in fit_type):
                             x_crit = np.log10(frequency[freqPointer]*np.sin(alpha)**3/(break_frequency))
                         else:
-                            raise Exception('Spectral fit must be either \'TCI\', \'TJP\' or \'TKP\' model.')
+                            raise Exception('Spectral fit must be a valid TCI, TJP or TKP model.')
                         if remnant_ratio > 0:
                             x_crit_star = np.log10(frequency[freqPointer]/(break_frequency*np.sin(alpha))*remnant_ratio**2)
                         else:
@@ -300,15 +307,15 @@ def __spectral_models_tribble(frequency,
                     
                         # calculate the spectrum for JP, KP or CI/off models
                         if (x > 10**x_crit):
-                            if (fit_type == 'TCI'):
+                            if ('CI' in fit_type):
                                 if remnant_ratio > 0:
                                     N_x = x**(-1./2)*((np.sqrt(x) - 10**(x_crit_star/2))**(injection_index - 1) - (np.sqrt(x) - 10**(x_crit/2))**(injection_index - 1))
                                 else:
                                     N_x = x**((injection_index - 2)/2.)*(1 - x**((1 - injection_index)/2.)*(np.sqrt(x) - 10**(x_crit/2))**(injection_index - 1))
-                            elif (fit_type == 'TJP' or fit_type == 'TKP'):
+                            elif ('JP' in fit_type or 'KP' in fit_type):
                                 N_x = x**(-1./2)*(np.sqrt(x) - 10**(x_crit/2))**(injection_index - 2)
                         elif (x > 10**x_crit_star): # only CI-off model should meet this condition
-                            if (fit_type == 'TCI'):
+                            if ('CI' in fit_type):
                                 if remnant_ratio > 0:
                                     N_x = x**(-1./2)*(np.sqrt(x) - 10**(x_crit_star/2))**(injection_index - 1)
                                 else:
@@ -334,17 +341,25 @@ def __spectral_models_tribble(frequency,
                                         bessla = besslc + 1
                                     else:
                                         besslb = besslc - 1
-                                    besslc = (bessla + besslb)//2
-                                F_x = bessel_F[besslc]
-
-                        # add contribution to the model spectrum flux
-                        if (fit_type == 'TCI'):
-                            luminosity_predict[freqPointer] = luminosity_predict[freqPointer] + frequency[freqPointer]**(-injection_index/2.)*np.sin(alpha)**((injection_index + 4)/2.)*F_x*N_x*dx*dalpha *B**2*np.exp(-B**2/(2*const_a))
-                        elif (fit_type == 'TJP'):
-                            luminosity_predict[freqPointer] = luminosity_predict[freqPointer] + frequency[freqPointer]**((1 - injection_index)/2.)*np.sin(alpha)**((injection_index + 3)/2.)*F_x*N_x*dx*dalpha *B**2*np.exp(-B**2/(2*const_a))
-                        elif (fit_type == 'TKP'):
-                            luminosity_predict[freqPointer] = luminosity_predict[freqPointer] + frequency[freqPointer]**((1 - injection_index)/2.)*np.sin(alpha)**((3*injection_index + 1)/2.)*F_x*N_x*dx*dalpha *B**2*np.exp(-B**2/(2*const_a))
-
+                            besslc = (bessla + besslb)//2
+                        F_x = bessel_F[besslc]
+                # add contribution to the model spectrum flux
+                if ('CI' in fit_type):
+                    luminosity_predict[freqPointer] = luminosity_predict[freqPointer] + frequency[freqPointer]**(-injection_index/2.)*np.sin(alpha)**((injection_index + 4)/2.)*F_x*N_x*dx*dalpha *B**2*np.exp(-B**2/(2*const_a))
+                elif ('JP' in fit_type):
+                    luminosity_predict[freqPointer] = luminosity_predict[freqPointer] + frequency[freqPointer]**((1 - injection_index)/2.)*np.sin(alpha)**((injection_index + 3)/2.)*F_x*N_x*dx*dalpha *B**2*np.exp(-B**2/(2*const_a))
+                elif ('KP' in fit_type):
+                    luminosity_predict[freqPointer] = luminosity_predict[freqPointer] + frequency[freqPointer]**((1 - injection_index)/2.)*np.sin(alpha)**((3*injection_index + 1)/2.)*F_x*N_x*dx*dalpha *B**2*np.exp(-B**2/(2*const_a))
+                    
+            # SSA Optical Depth & Attenuation 
+            if peak_frequency > 0:
+                tau = (frequency[freqPointer] / peak_frequency)**(-(injection_index + 4) / 2.0)
+                if tau < 1e-4:
+                    ssa_factor = 1.0 - tau/2.0
+                else:
+                    ssa_factor = (1.0 - np.exp(-tau)) / tau
+                luminosity_predict[freqPointer] = luminosity_predict[freqPointer] * ssa_factor
+    
             if (normalisation <= 0):
                 luminosity_sum = luminosity_sum + np.log10(luminosity[freqPointer] + 1e-307)
                 predict_sum = predict_sum + np.log10(luminosity_predict[freqPointer] + 1e-307)
